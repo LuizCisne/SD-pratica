@@ -5,26 +5,26 @@ USE ieee.math_real.ALL;
 
 ENTITY sad IS
     GENERIC (
-        B : POSITIVE := 8;  -- Number of bits per sample
-        N : POSITIVE := 64; -- Number of samples per block
-        P : POSITIVE := 4   -- Number of samples read in parallel
+        B : POSITIVE := 8;  -- Número de bits por amostra
+        N : POSITIVE := 64; -- Número de amostras por bloco
+        P : POSITIVE := 4   -- Número de amostras lidas em paralelo
     );
     PORT (
-        clk : IN std_logic;  -- Clock
-        enable : IN std_logic; -- Enables calculation
-        reset : IN std_logic;  -- Reset signal
-        sample_ori : IN std_logic_vector(P*B-1 DOWNTO 0);  -- Original samples (P samples of B bits)
-        sample_can : IN std_logic_vector(P*B-1 DOWNTO 0);  -- Candidate samples (P samples of B bits)
-        read_mem : OUT std_logic;  -- Signal for memory read
-        address : OUT std_logic_vector(integer(log2(real(N)))-1 DOWNTO 0);  -- Memory address
-        sad_value : OUT std_logic_vector(B+integer(log2(real(P)))-1 DOWNTO 0);  -- Final SAD value
-        done: OUT std_logic  -- Indicates operation completion
+        clk : IN std_logic;  -- Relógio
+        enable : IN std_logic; -- Habilita o cálculo
+        reset : IN std_logic;  -- Reset
+        sample_ori : IN std_logic_vector(P*B-1 DOWNTO 0);  -- Amostras originais
+        sample_can : IN std_logic_vector(P*B-1 DOWNTO 0);  -- Amostras candidatas
+        read_mem : OUT std_logic;  -- Sinal para leitura de memória
+        address : OUT std_logic_vector(integer(ceil(log2(real(N))))-1 DOWNTO 0);  -- Endereço da memória
+        sad_value : OUT std_logic_vector(B+integer(ceil(log2(real(P))))-1 DOWNTO 0);  -- Valor final do SAD
+        done: OUT std_logic  -- Sinaliza o término da operação
     );
 END ENTITY sad;
 
 ARCHITECTURE arch OF sad IS
 
-    -- Function to calculate log2 of integers
+    -- Função log2
     FUNCTION log2 (val : INTEGER) RETURN INTEGER IS
         VARIABLE result : INTEGER := 0;
         VARIABLE v : INTEGER := val;
@@ -36,43 +36,47 @@ ARCHITECTURE arch OF sad IS
         RETURN result;
     END FUNCTION;
 
-    -- Internal signals
-    SIGNAL abs_out : std_logic_vector(P*(B-1) DOWNTO 0) := (OTHERS => '0');  -- Outputs of absolute values
-    SIGNAL soma_out : std_logic_vector(B+log2(P)-1 DOWNTO 0) := (OTHERS => '0'); -- Output from the summation tree
-    SIGNAL csoma : std_logic_vector(B+log2(P)-1 DOWNTO 0) := (OTHERS => '0');  -- Final accumulator output
-    SIGNAL done_signal : std_logic := '0'; -- Completion signal
-    SIGNAL addr_counter : unsigned(log2(N)-1 DOWNTO 0) := (OTHERS => '0');  -- Address counter
+    -- Definindo larguras de sinais
+    CONSTANT address_width : INTEGER := integer(ceil(log2(real(N))));
+    CONSTANT sad_width : INTEGER := B + integer(ceil(log2(real(P))));
+
+    -- Sinais internos
+    SIGNAL abs_out : std_logic_vector(P*B-1 DOWNTO 0);  -- Ajustado para P*B bits
+    SIGNAL soma_out : std_logic_vector(sad_width-1 DOWNTO 0); -- Saída da árvore de soma
+    SIGNAL csoma : std_logic_vector(sad_width-1 DOWNTO 0);  -- Saída final do acumulador
+    SIGNAL done_signal : std_logic := '0'; -- Sinal de operação concluída
+    SIGNAL addr_counter : unsigned(address_width-1 DOWNTO 0) := (OTHERS => '0');  -- Contador para endereços
 
 BEGIN
 
-    -- Address generator process
+    -- Gerador de endereços
     address_gen : PROCESS (clk, reset)
     BEGIN
         IF reset = '1' THEN
             addr_counter <= (OTHERS => '0');
             read_mem <= '0';
-            done_signal <= '0';  -- Reset done signal
+            done_signal <= '0';
         ELSIF rising_edge(clk) THEN
             IF enable = '1' THEN
                 read_mem <= '1';
                 IF addr_counter = N-1 THEN
                     addr_counter <= (OTHERS => '0');
-                    done_signal <= '1';  -- Operation complete
+                    done_signal <= '1';
                 ELSE
                     addr_counter <= addr_counter + 1;
                     done_signal <= '0';
                 END IF;
             ELSE
                 read_mem <= '0';
-                done_signal <= '0';  -- Disable done signal
+                done_signal <= '0';
             END IF;
         END IF;
     END PROCESS;
 
-    -- Address output assignment
+    -- Atribuição do endereço
     address <= std_logic_vector(addr_counter);
 
-    -- Instance of the absolute difference calculation module
+    -- Instância do componente SAD_TOP
     sad_inst : ENTITY work.sad_top
         GENERIC MAP (
             N => B,
@@ -85,31 +89,31 @@ BEGIN
             abs_out => abs_out
         );
 
-    -- Instance of the summation tree
+    -- Instância da árvore de soma
     adder_tree_inst : ENTITY work.adderTree
         GENERIC MAP (
-            N => B-1,  -- Input width (B-1 bits due to abs_out)
-            P => P     -- Number of values to sum
+            N => B,  -- Número de bits por valor absoluto
+            P => P   -- Número de valores a serem somados
         )
         PORT MAP (
-            inputs => abs_out,  -- Connected to absolute outputs
-            sum_out => soma_out -- Output from the summation tree
+            inputs => abs_out, 
+            sum_out => soma_out 
         );
 
-    -- Instance of the accumulator for iterative summation
+    -- Instância do acumulador
     acumulador_inst : ENTITY work.acumulador
         GENERIC MAP (
-            N => B+log2(P) -- Considering bit increase during summation
+            N => sad_width
         )
         PORT MAP (
             clk => clk,
-            sel => '1',  -- Select accumulator mode
-            a => soma_out,  -- Input from summation tree
-            b => soma_out,  -- For simplicity, summing the same value
-            q_out => csoma  -- Final output from the accumulator
+            sel => '1',  
+            a => soma_out, 
+            b => soma_out,  
+            q_out => csoma  
         );
 
-    -- Final output assignment
+    -- Conectando a saída final
     sad_value <= csoma;
     done <= done_signal;
 
