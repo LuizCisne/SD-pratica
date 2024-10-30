@@ -24,18 +24,6 @@ END ENTITY sad;
 
 ARCHITECTURE arch OF sad IS
 
-    -- Função log2
-    FUNCTION log2 (val : INTEGER) RETURN INTEGER IS
-        VARIABLE result : INTEGER := 0;
-        VARIABLE v : INTEGER := val;
-    BEGIN
-        WHILE v > 1 LOOP
-            v := v / 2;
-            result := result + 1;
-        END LOOP;
-        RETURN result;
-    END FUNCTION;
-
     -- Definindo larguras de sinais
     CONSTANT address_width : INTEGER := integer(ceil(log2(real(N))));
     CONSTANT sad_width : INTEGER := B + integer(ceil(log2(real(P))));
